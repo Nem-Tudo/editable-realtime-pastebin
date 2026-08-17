@@ -13,6 +13,8 @@ services:
     environment:
       PORT: 4000
       MONGO_URI: mongodb://mongo:27017/codepaste
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
     ports:
       - "55018:4000"
     depends_on:
@@ -26,6 +28,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       API_INTERNAL_URL: http://api:4000
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL}
     ports:
       - "55017:3000"
     depends_on:

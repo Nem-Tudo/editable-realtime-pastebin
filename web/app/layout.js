@@ -2,7 +2,7 @@ import './globals.css';
 
 export const metadata = {
   title: 'Code Paste',
-  description: 'Editable raw code pastes'
+  description: 'Paste de texto e código'
 };
 
 export default function RootLayout({ children }) {

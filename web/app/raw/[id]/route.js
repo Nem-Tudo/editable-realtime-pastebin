@@ -2,11 +2,11 @@ const API_INTERNAL = process.env.API_INTERNAL_URL || 'http://api:4000';
 
 export async function GET(request, { params }) {
   const { id } = await params;
-
   try {
     const response = await fetch(`${API_INTERNAL}/raw/${encodeURIComponent(id)}`, {
       headers: {
-        'user-agent': request.headers.get('user-agent') || ''
+        'user-agent': request.headers.get('user-agent') || '',
+        'x-forwarded-for': request.headers.get('x-forwarded-for') || ''
       },
       cache: 'no-store'
     });

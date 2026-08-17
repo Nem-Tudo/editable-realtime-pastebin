@@ -1,49 +1,63 @@
 # Code Paste
 
-Pastebin-like editor with Next.js, Monaco, Express and MongoDB.
+Pastebin-like editor with Next.js, Monaco, Express e MongoDB.
 
-## Rotas
+## Funcionalidades
 
-- `GET /p/:id` — editor
-- `POST /api/pastes` — criar paste
+- `GET /p/:id` — editor administrativo
+- `GET /view/:id` — visualização formatada em Markdown
+- `GET /raw/:id` — RAW público
+- `POST /api/pastes` — criar paste (Basic Auth)
 - `GET /api/pastes/:id` — obter paste
-- `PUT /api/pastes/:id` — salvar paste
-- `GET /raw/:id` — RAW (servido pelo domínio da web)
-- `GET /health` — health da API
+- `PUT /api/pastes/:id` — editar paste (Basic Auth)
+- `DELETE /api/pastes/:id` — apagar paste (Basic Auth)
+- `GET /api/pastes/:id/render` — conteúdo selecionado para a visualização
 
-O `/raw/:id` público passa pelo Next.js e encaminha o `User-Agent` para a API. Assim, o RAW fica no mesmo domínio da interface, enquanto a API continua separada.
+### Basic Auth
 
-## User-Agent
+Configure no `.env`:
 
-Cada paste pode ter regras de User-Agent no formato:
-
-```json
-{
-  "userAgentRegex": "Discordbot|Googlebot",
-  "content": "conteúdo específico"
-}
+```env
+ADMIN_USER=admin
+ADMIN_PASSWORD=uma-senha-forte
+NEXT_PUBLIC_API_URL=https://apibin.nemtudo.me
+PUBLIC_WEB_URL=https://bin.nemtudo.me
 ```
 
-As regras são avaliadas em ordem e a primeira regex que casar com o `User-Agent` vence. Se nenhuma casar, o conteúdo principal do paste é retornado.
+Criação, edição e exclusão exigem `Authorization: Basic ...`.
 
-As regex são interpretadas pelo JavaScript com flag `i` (case-insensitive). Regex inválida é ignorada.
+### Textos reutilizáveis
 
-## Docker
+Cada paste possui uma lista de **Textos salvos**. Cada texto tem:
+
+- nome;
+- conteúdo.
+
+As regras não armazenam mais o conteúdo. Elas apontam para `textId`, então o mesmo texto pode ser reutilizado por várias regras.
+
+### Filtros
+
+Cada regra pode combinar:
+
+- `User-Agent regex`;
+- `IP regex`;
+- país;
+- estado/região;
+- cidade.
+
+Todos os campos preenchidos na regra precisam coincidir. Regras são avaliadas de cima para baixo; a primeira que casar seleciona o texto vinculado.
+
+A localização é obtida server-side usando IP-API para IPs públicos. IPs privados/localhost não possuem geolocalização.
+
+### Visualização / OG
+
+`/view/:id` renderiza Markdown/GFM e gera Open Graph/Twitter metadata dinamicamente, usando o conteúdo selecionado para a requisição.
+
+### Docker
 
 ```bash
 docker compose up --build
 ```
 
-A aplicação web fica na porta `55017` e a API na `55018`.
-
-Defina `NEXT_PUBLIC_API_URL` com a URL pública da API, por exemplo:
-
-```env
-NEXT_PUBLIC_API_URL=https://apibin.nemtudo.me
-```
-
-O `API_INTERNAL_URL` usado pelo container web já aponta para `http://api:4000`.
-
-## Segurança
-
-O servidor não executa o conteúdo dos pastes. O RAW apenas retorna texto armazenado.
+Web: `55017`  
+API: `55018`
