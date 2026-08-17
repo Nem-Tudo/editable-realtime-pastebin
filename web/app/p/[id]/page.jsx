@@ -265,9 +265,14 @@ export default function PasteEditor({ params }) {
   }
 
 
-  if (!id || !authReady) return <main className="center"><div className="card">Verificando autorização...</div></main>;
+  // Este hook precisa ser executado em toda renderização, antes de qualquer
+  // return condicional, para manter a ordem dos Hooks estável.
+  const referencedTextIds = useMemo(
+    () => new Set(rules.map(rule => rule.textId).filter(Boolean)),
+    [rules]
+  );
 
-  const referencedTextIds = useMemo(() => new Set(rules.map(rule => rule.textId).filter(Boolean)), [rules]);
+  if (!id || !authReady) return <main className="center"><div className="card">Verificando autorização...</div></main>;
 
   if (!authorized) return (
     <main className="center">
