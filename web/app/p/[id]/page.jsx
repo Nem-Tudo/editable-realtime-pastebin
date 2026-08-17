@@ -72,6 +72,7 @@ export default function PasteEditor({ params }) {
   }, [params]);
 
   const viewUrl = useMemo(() => id ? `${window.location.origin}/${id}` : '', [id]);
+  const rawUrl = useMemo(() => id ? `${window.location.origin}/raw/${id}` : '', [id]);
   const selectedText = useMemo(
     () => texts.find(text => text.id === selectedTextId) || texts[0] || null,
     [texts, selectedTextId]
@@ -325,7 +326,8 @@ export default function PasteEditor({ params }) {
         </select>
         <div className="spacer" />
         <span className="status">{status}</span>
-        <a href={viewUrl} target="_blank" rel="noreferrer">Visualizar</a>
+        <a href={viewUrl} target="_blank" rel="noreferrer">Raw</a>
+        <a href={rawUrl} target="_blank" rel="noreferrer">Visualizar</a>
         <button className="primary" onClick={save} disabled={saving}>{saving ? 'Salvando...' : (pasteExists ? 'Salvar' : 'Criar')}</button>
       </header>
 
@@ -365,7 +367,6 @@ export default function PasteEditor({ params }) {
           ))}
         </div>
       </section>
-
       <section className="editor-section">
         <div className="editor-head">
           <div>
@@ -399,7 +400,6 @@ export default function PasteEditor({ params }) {
           )}
         </div>
       </section>
-
       <section className="management rules-section">
         <div className="section-head">
           <strong>Filtros / regras</strong>
