@@ -71,7 +71,7 @@ export default function PasteEditor({ params }) {
     setAuthReady(true);
   }, [params]);
 
-  const viewUrl = useMemo(() => id ? `${window.location.origin}/view/${id}` : '', [id]);
+  const viewUrl = useMemo(() => id ? `${window.location.origin}/${id}` : '', [id]);
   const selectedText = useMemo(
     () => texts.find(text => text.id === selectedTextId) || texts[0] || null,
     [texts, selectedTextId]
