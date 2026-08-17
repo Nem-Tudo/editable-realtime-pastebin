@@ -26,11 +26,13 @@ export default function PasteEditor({ params }) {
   const [saving, setSaving] = useState(false);
   const [auth, setAuth] = useState('');
   const [authReady, setAuthReady] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
 
   useEffect(() => {
     Promise.resolve(params).then(p => setId(p.id));
-    setAuth(sessionStorage.getItem('codepaste-basic-auth') || '');
+    const saved = localStorage.getItem('codepaste-basic-auth') || '';
+    setAuth(saved);
     setAuthReady(true);
   }, [params]);
 
@@ -48,7 +50,7 @@ export default function PasteEditor({ params }) {
     const password = window.prompt('Senha Basic Auth:');
     if (password === null) return false;
     const encoded = btoa(unescape(encodeURIComponent(`${user}:${password}`)));
-    sessionStorage.setItem('codepaste-basic-auth', encoded);
+    localStorage.setItem('codepaste-basic-auth', encoded);
     setAuth(encoded);
     return true;
   }
@@ -72,15 +74,34 @@ export default function PasteEditor({ params }) {
   }, [id]);
 
   useEffect(() => {
-    if (authReady) load();
-  }, [load, authReady]);
+    if (!authReady || !auth) return;
+
+    fetch(`${API}/api/auth/check`, {
+      headers: { Authorization: `Basic ${auth}` },
+      cache: 'no-store'
+    }).then(response => {
+      if (!response.ok) throw new Error('unauthorized');
+      setAuthorized(true);
+    }).catch(() => {
+      localStorage.removeItem('codepaste-basic-auth');
+      setAuth('');
+      setAuthorized(false);
+      setStatus('Não autorizado');
+    });
+  }, [auth, authReady]);
+
+  useEffect(() => {
+    if (authorized) load();
+  }, [load, authorized]);
 
   function addText() {
     setTexts(value => [...value, { id: makeId(), name: `Texto ${value.length + 1}`, content: '' }]);
   }
 
-  function updateText(index, field, value) {
-    setTexts(value => value.map((item, i) => i === index ? { ...item, [field]: value } : item));
+  function updateText(index, field, nextValue) {
+    setTexts(current => current.map((item, i) =>
+      i === index ? { ...item, [field]: nextValue } : item
+    ));
   }
 
   function removeText(index) {
@@ -97,6 +118,7 @@ export default function PasteEditor({ params }) {
       country: '',
       region: '',
       city: '',
+      device: '',
       textId: texts[0]?.id || ''
     }]);
   }
@@ -119,7 +141,7 @@ export default function PasteEditor({ params }) {
       });
 
       if (response.status === 401) {
-        sessionStorage.removeItem('codepaste-basic-auth');
+        localStorage.removeItem('codepaste-basic-auth');
         setAuth('');
         throw new Error('auth');
       }
@@ -152,7 +174,18 @@ export default function PasteEditor({ params }) {
     }
   }
 
-  if (!id) return <main className="center"><div className="card">Carregando...</div></main>;
+  if (!id || !authReady) return <main className="center"><div className="card">Verificando autorização...</div></main>;
+
+  if (!authorized) return (
+    <main className="center">
+      <div className="card auth-card">
+        <h1>Acesso restrito</h1>
+        <p>Esta página é apenas para usuários autorizados.</p>
+        <button className="primary" onClick={() => askAuth()}>Entrar</button>
+        <small className="muted">{status}</small>
+      </div>
+    </main>
+  );
 
   return (
     <main className="editor-page">
@@ -184,6 +217,7 @@ export default function PasteEditor({ params }) {
           <div className="panel" key={text.id}>
             <div className="row">
               <input value={text.name} onChange={e => updateText(index, 'name', e.target.value)} placeholder="Nome do texto" />
+              <span className="views">{Number(text.views || 0).toLocaleString('pt-BR')} visualizações</span>
               <button onClick={() => removeText(index)}>Remover</button>
             </div>
             <textarea value={text.content} onChange={e => updateText(index, 'content', e.target.value)}
@@ -211,6 +245,14 @@ export default function PasteEditor({ params }) {
               <input value={rule.country} onChange={e => updateRule(index, 'country', e.target.value)} placeholder="País ex.: Brazil" />
               <input value={rule.region} onChange={e => updateRule(index, 'region', e.target.value)} placeholder="Estado/região ex.: São Paulo" />
               <input value={rule.city} onChange={e => updateRule(index, 'city', e.target.value)} placeholder="Cidade ex.: São José dos Campos" />
+              <select value={rule.device || ''} onChange={e => updateRule(index, 'device', e.target.value)}>
+                <option value="">Qualquer dispositivo</option>
+                <option value="pc">PC / computador</option>
+                <option value="mobile">Celular</option>
+                <option value="tablet">Tablet</option>
+                <option value="tv">TV / Smart TV</option>
+                <option value="bot">Bot / crawler</option>
+              </select>
             </div>
             <small className="muted">Todos os campos preenchidos nessa regra precisam coincidir. Regex vazia não restringe.</small>
           </div>

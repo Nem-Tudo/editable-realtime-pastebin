@@ -40,3 +40,7 @@ button.primary { background: #2563eb; border-color: #2563eb; }
   .grid { grid-template-columns: 1fr; }
   .updated { display: none; }
 }
+
+.views { color: #9aa1ad; font-size: 12px; padding: 8px 0; white-space: nowrap; }
+.auth-card { min-width: 320px; text-align: center; display: grid; gap: 12px; }
+.auth-card button { cursor: pointer; }

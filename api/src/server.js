@@ -28,16 +28,7 @@ function requireBasicAuth(req, res, next) {
     const user = separator >= 0 ? decoded.slice(0, separator) : '';
     const password = separator >= 0 ? decoded.slice(separator + 1) : '';
 
-    const okUser = crypto.timingSafeEqual(
-      Buffer.from(user),
-      Buffer.from(ADMIN_USER)
-    );
-    const okPassword = crypto.timingSafeEqual(
-      Buffer.from(password),
-      Buffer.from(ADMIN_PASSWORD)
-    );
-
-    if (!okUser || !okPassword) throw new Error('invalid credentials');
+    if (!authHeaderIsValid(req)) throw new Error('invalid credentials');
     next();
   } catch {
     res.set('WWW-Authenticate', 'Basic realm="Code Paste Admin"');
@@ -48,7 +39,8 @@ function requireBasicAuth(req, res, next) {
 const textSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String, required: true, maxlength: 120 },
-  content: { type: String, required: true, default: '' }
+  content: { type: String, required: true, default: '' },
+  views: { type: Number, default: 0 }
 }, { _id: false });
 
 const ruleSchema = new mongoose.Schema({
@@ -58,6 +50,7 @@ const ruleSchema = new mongoose.Schema({
   country: { type: String, default: '', maxlength: 100 },
   region: { type: String, default: '', maxlength: 100 },
   city: { type: String, default: '', maxlength: 100 },
+  device: { type: String, default: '', enum: ['', 'mobile', 'tablet', 'tv', 'pc', 'bot'] },
   textId: { type: String, required: true }
 }, { _id: false });
 
@@ -90,7 +83,8 @@ function sanitizeTexts(value) {
   return value.slice(0, 200).map(text => ({
     id: stringValue(text?.id, 100) || newId(),
     name: stringValue(text?.name, 120) || 'Sem nome',
-    content: stringValue(text?.content, 1000000)
+    content: stringValue(text?.content, 1000000),
+    views: Number.isFinite(Number(text?.views)) ? Math.max(0, Number(text.views)) : 0
   }));
 }
 
@@ -106,6 +100,7 @@ function sanitizeRules(value, texts) {
       country: stringValue(rule?.country, 100),
       region: stringValue(rule?.region, 100),
       city: stringValue(rule?.city, 100),
+      device: ['mobile', 'tablet', 'tv', 'pc', 'bot'].includes(rule?.device) ? rule.device : '',
       textId: stringValue(rule?.textId, 100)
     }))
     .filter(rule => validTextIds.has(rule.textId));
@@ -122,6 +117,44 @@ function serializePaste(paste) {
     updatedAt: paste.updatedAt
   };
 }
+
+function detectDevice(userAgent) {
+  const ua = String(userAgent || '').toLowerCase();
+
+  if (/smart-tv|hbbtv|appletv|googletv|crkey|roku|web0s|tizen|netcast/.test(ua)) return 'tv';
+  if (/ipad|tablet|android(?!.*mobile)|kindle|silk|playbook/.test(ua)) return 'tablet';
+  if (/iphone|ipod|android.*mobile|windows phone|mobile/.test(ua)) return 'mobile';
+  if (/bot|crawler|spider|headless/.test(ua)) return 'bot';
+  return 'pc';
+}
+
+function authHeaderIsValid(req) {
+  const header = req.get('authorization') || '';
+  if (!header.startsWith('Basic ')) return false;
+
+  try {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+    const separator = decoded.indexOf(':');
+    const user = separator >= 0 ? decoded.slice(0, separator) : '';
+    const password = separator >= 0 ? decoded.slice(separator + 1) : '';
+
+    const userBuf = Buffer.from(user);
+    const expectedUserBuf = Buffer.from(ADMIN_USER);
+    const passBuf = Buffer.from(password);
+    const expectedPassBuf = Buffer.from(ADMIN_PASSWORD);
+
+    return userBuf.length === expectedUserBuf.length &&
+      passBuf.length === expectedPassBuf.length &&
+      crypto.timingSafeEqual(userBuf, expectedUserBuf) &&
+      crypto.timingSafeEqual(passBuf, expectedPassBuf);
+  } catch {
+    return false;
+  }
+}
+
+app.get('/api/auth/check', requireBasicAuth, (req, res) => {
+  res.json({ authenticated: true, user: ADMIN_USER });
+});
 
 function getClientIp(req) {
   let ip = req.ip || req.socket.remoteAddress || '';
@@ -169,7 +202,8 @@ function ruleMatches(rule, context) {
     regexMatches(rule.ipRegex, context.ip) &&
     (!rule.country || rule.country.toLowerCase() === context.country.toLowerCase()) &&
     (!rule.region || rule.region.toLowerCase() === context.region.toLowerCase()) &&
-    (!rule.city || rule.city.toLowerCase() === context.city.toLowerCase());
+    (!rule.city || rule.city.toLowerCase() === context.city.toLowerCase()) &&
+    (!rule.device || rule.device === context.device);
 }
 
 app.get('/health', (req, res) => {
@@ -248,25 +282,35 @@ async function resolveContent(req, paste) {
   const userAgent = req.get('user-agent') || '';
   const ip = getClientIp(req);
   const location = await geolocateIp(ip);
+  const device = detectDevice(userAgent);
 
   const context = {
     userAgent,
     ip,
     country: location.country,
     region: location.region,
-    city: location.city
+    city: location.city,
+    device
   };
 
   for (const rule of paste.rules || []) {
     if (ruleMatches(rule, context)) {
       const text = (paste.texts || []).find(item => item.id === rule.textId);
       if (text) {
-        return { content: text.content, context };
+        return { content: text.content, textId: text.id, context };
       }
     }
   }
 
-  return { content: paste.content, context };
+  return { content: paste.content, textId: null, context };
+}
+
+async function incrementTextView(pasteId, textId) {
+  if (!textId) return;
+  await Paste.updateOne(
+    { _id: pasteId, 'texts.id': textId },
+    { $inc: { 'texts.$.views': 1 } }
+  );
 }
 
 app.get('/raw/:id', async (req, res) => {
@@ -276,9 +320,11 @@ app.get('/raw/:id', async (req, res) => {
 
     const result = await resolveContent(req, paste);
 
+    await incrementTextView(paste._id, result.textId);
+
     console.log(
       `[RAW] ${result.context.ip} ${result.context.country}/${result.context.region}/${result.context.city} ` +
-      `${JSON.stringify(result.context.userAgent)} -> ${paste._id}`
+      `${result.context.device} ${JSON.stringify(result.context.userAgent)} -> ${paste._id}`
     );
 
     res
@@ -298,10 +344,13 @@ app.get('/api/pastes/:id/render', async (req, res) => {
     if (!paste) return res.status(404).json({ error: 'Paste not found' });
 
     const result = await resolveContent(req, paste);
+    await incrementTextView(paste._id, result.textId);
     res.json({
       id: paste._id,
       language: paste.language,
-      content: result.content
+      content: result.content,
+      textId: result.textId,
+      device: result.context.device
     });
   } catch {
     res.status(404).json({ error: 'Paste not found' });

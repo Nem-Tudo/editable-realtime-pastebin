@@ -43,7 +43,8 @@ Cada regra pode combinar:
 - `IP regex`;
 - país;
 - estado/região;
-- cidade.
+- cidade;
+- dispositivo (`pc`, `mobile`, `tablet`, `tv`, `bot`).
 
 Todos os campos preenchidos na regra precisam coincidir. Regras são avaliadas de cima para baixo; a primeira que casar seleciona o texto vinculado.
 
@@ -61,3 +62,26 @@ docker compose up --build
 
 Web: `55017`  
 API: `55018`
+
+
+### Autenticação do editor
+
+A rota `/p/:id` não renderiza o editor até que o navegador tenha validado as credenciais em `/api/auth/check`.
+
+Depois do primeiro login, o Basic Auth fica salvo em `localStorage` para continuar autenticado nas próximas visitas. Para sair, remova a credencial salva no navegador ou use a opção de limpeza de credenciais.
+
+### Visualizações
+
+Cada texto salvo possui um contador `views`. Quando uma regra seleciona aquele texto em `/raw/:id` ou na visualização pública, o contador é incrementado.
+
+### Dispositivo
+
+O servidor classifica o User-Agent como:
+
+- `pc`
+- `mobile`
+- `tablet`
+- `tv`
+- `bot`
+
+A regra pode selecionar um texto específico por dispositivo.
