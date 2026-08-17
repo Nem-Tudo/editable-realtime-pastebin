@@ -15,7 +15,7 @@ async function getPaste(id, count = true) {
 export async function generateMetadata({ params }) {
   const { id } = await params;
   const paste = await getPaste(id, false);
-  if (!paste) return { title: 'Paste não encontrado' };
+  if (!paste) return { title: 'Paste não encontrado!' };
 
   const plain = String(paste.content || '').replace(/[#*_`>\[\]]/g, '').replace(/\s+/g, ' ').trim();
   const description = plain.slice(0, 180) || 'Code Paste';
