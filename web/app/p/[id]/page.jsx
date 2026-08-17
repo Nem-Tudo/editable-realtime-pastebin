@@ -277,7 +277,7 @@ export default function PasteEditor({ params }) {
 
       if (isRandomPaste) {
         const editorUrl = `/p/${encodeURIComponent(targetId)}`;
-        if (event?.shiftKey) {
+        if (event?.ctrlKey) {
           window.open(editorUrl, '_blank', 'noopener,noreferrer');
         } else {
           window.location.href = editorUrl;
