@@ -326,8 +326,8 @@ export default function PasteEditor({ params }) {
         </select>
         <div className="spacer" />
         <span className="status">{status}</span>
-        <a href={viewUrl} target="_blank" rel="noreferrer">Raw</a>
-        <a href={rawUrl} target="_blank" rel="noreferrer">Visualizar</a>
+        <a href={rawUrl} target="_blank" rel="noreferrer">Raw</a>
+        <a href={viewUrl} target="_blank" rel="noreferrer">Visualizar</a>
         <button className="primary" onClick={save} disabled={saving}>{saving ? 'Salvando...' : (pasteExists ? 'Salvar' : 'Criar')}</button>
       </header>
 
