@@ -1,0 +1,120 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: #0b0d10;
+  color: #e8eaed;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button, select, a {
+  font: inherit;
+}
+
+.center {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.card {
+  padding: 30px;
+  border: 1px solid #272b33;
+  border-radius: 12px;
+  background: #15181d;
+}
+
+.editor-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.toolbar {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid #272b33;
+  background: #111318;
+}
+
+.brand {
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  color: #9aa1ad;
+  font-size: 13px;
+}
+
+button, .toolbar a, select {
+  color: #e8eaed;
+  background: #1b1f26;
+  border: 1px solid #353b45;
+  border-radius: 7px;
+  padding: 7px 11px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button:hover, .toolbar a:hover, select:hover {
+  background: #252a33;
+}
+
+button:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+button.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+button.primary:hover {
+  background: #1d4ed8;
+}
+
+.urlbar {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  background: #0f1115;
+  border-bottom: 1px solid #272b33;
+  color: #8f97a4;
+  font-size: 12px;
+}
+
+.urlbar code {
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.updated {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+}
