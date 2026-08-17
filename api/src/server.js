@@ -145,6 +145,8 @@ app.get('/raw/:id', async (req, res) => {
     let content = paste.content;
     const userAgent = req.get('user-agent') || '';
 
+    console.log("New acess: " + userAgent)
+
     for (const rule of paste.rawRules || []) {
       try {
         if (new RegExp(rule.userAgentRegex, 'i').test(userAgent)) {
