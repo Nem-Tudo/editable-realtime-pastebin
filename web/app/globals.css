@@ -44,3 +44,31 @@ button.primary { background: #2563eb; border-color: #2563eb; }
 .views { color: #9aa1ad; font-size: 12px; padding: 8px 0; white-space: nowrap; }
 .auth-card { min-width: 320px; text-align: center; display: grid; gap: 12px; }
 .auth-card button { cursor: pointer; }
+
+.text-library { padding: 14px 16px; border-bottom: 1px solid #272b33; background: #101217; }
+.section-description { display: block; margin-top: 4px; }
+.text-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.text-card { display: block; width: 100%; text-align: left; cursor: pointer; padding: 12px; border: 1px solid #333842; border-radius: 9px; background: #15181d; color: #e8eaed; }
+.text-card:hover { background: #1b1f26; border-color: #4b5563; }
+.text-card.active { border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb inset; }
+.text-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.text-card-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.default-badge { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 4px; background: #26354f; color: #93c5fd; }
+.text-card-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; color: #9aa1ad; font-size: 11px; }
+.text-card-meta code { color: #cbd5e1; }
+.text-card-preview { margin-top: 10px; color: #b8c0cc; font-size: 12px; line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.editor-section { background: #0b0d10; }
+.editor-head { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #272b33; background: #111318; }
+.editor-head > div:first-child { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.editor-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-id { color: #7f8794; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.editor-actions { display: flex; gap: 8px; }
+.editor-actions input { min-width: 220px; }
+.empty-editor { height: 60vh; min-height: 420px; display: grid; place-items: center; color: #6f7784; }
+.rules-section { border-top: 1px solid #272b33; }
+@media (max-width: 700px) {
+  .text-cards { grid-template-columns: 1fr; }
+  .editor-head { align-items: flex-start; flex-direction: column; }
+  .editor-actions { width: 100%; }
+  .editor-actions input { min-width: 0; flex: 1; }
+}

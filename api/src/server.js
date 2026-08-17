@@ -40,6 +40,7 @@ const textSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String, required: true, maxlength: 120 },
   content: { type: String, required: true, default: '' },
+  language: { type: String, default: 'plaintext' },
   views: { type: Number, default: 0 }
 }, { _id: false });
 
@@ -78,14 +79,29 @@ function sanitizeLanguage(value) {
   return stringValue(value, 40) || 'plaintext';
 }
 
-function sanitizeTexts(value) {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 200).map(text => ({
-    id: stringValue(text?.id, 100) || newId(),
-    name: stringValue(text?.name, 120) || 'Sem nome',
-    content: stringValue(text?.content, 1000000),
-    views: Number.isFinite(Number(text?.views)) ? Math.max(0, Number(text.views)) : 0
-  }));
+function sanitizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext') {
+  const source = Array.isArray(value) ? value.slice(0, 200) : [];
+  const incomingDefault = source.find(text => text?.id === 'default');
+
+  const defaultText = {
+    id: 'default',
+    name: 'Default',
+    content: stringValue(incomingDefault?.content ?? legacyContent, 1000000),
+    language: sanitizeLanguage(incomingDefault?.language ?? legacyLanguage),
+    views: Number.isFinite(Number(incomingDefault?.views)) ? Math.max(0, Number(incomingDefault.views)) : 0
+  };
+
+  const namedTexts = source
+    .filter(text => text?.id !== 'default')
+    .map(text => ({
+      id: stringValue(text?.id, 100) || newId(),
+      name: stringValue(text?.name, 120) || 'Sem nome',
+      content: stringValue(text?.content, 1000000),
+      language: sanitizeLanguage(text?.language),
+      views: Number.isFinite(Number(text?.views)) ? Math.max(0, Number(text.views)) : 0
+    }));
+
+  return [defaultText, ...namedTexts];
 }
 
 function sanitizeRules(value, texts) {
@@ -109,8 +125,8 @@ function sanitizeRules(value, texts) {
 function serializePaste(paste) {
   return {
     id: paste._id,
-    content: paste.content,
-    language: paste.language,
+    content: paste.texts?.find(text => text.id === 'default')?.content ?? paste.content ?? '',
+    language: paste.texts?.find(text => text.id === 'default')?.language ?? paste.language ?? 'plaintext',
     texts: paste.texts || [],
     rules: paste.rules || [],
     createdAt: paste.createdAt,
@@ -212,13 +228,13 @@ app.get('/health', (req, res) => {
 
 app.post('/api/pastes', requireBasicAuth, async (req, res) => {
   try {
-    const texts = sanitizeTexts(req.body.texts);
+    const texts = sanitizeTexts(req.body.texts, req.body.content, req.body.language);
     const rules = sanitizeRules(req.body.rules, texts);
 
     const paste = await Paste.create({
       _id: newId(),
-      content: stringValue(req.body.content, 1000000),
-      language: sanitizeLanguage(req.body.language),
+      content: texts[0]?.content || '',
+      language: texts[0]?.language || 'plaintext',
       texts,
       rules
     });
@@ -242,7 +258,16 @@ app.get('/api/pastes/:id', async (req, res) => {
 
 app.put('/api/pastes/:id', requireBasicAuth, async (req, res) => {
   try {
-    const texts = sanitizeTexts(req.body.texts);
+    const existing = await Paste.findById(req.params.id).lean();
+    const texts = sanitizeTexts(req.body.texts, req.body.content, req.body.language);
+
+    // Nunca diminui contadores por causa de um editor que ficou aberto
+    // enquanto novas visualizações eram registradas.
+    const existingViews = new Map((existing?.texts || []).map(text => [text.id, Number(text.views || 0)]));
+    for (const text of texts) {
+      text.views = Math.max(Number(text.views || 0), existingViews.get(text.id) || 0);
+    }
+
     const rules = sanitizeRules(req.body.rules, texts);
     const now = new Date();
 
@@ -250,8 +275,8 @@ app.put('/api/pastes/:id', requireBasicAuth, async (req, res) => {
       { _id: req.params.id },
       {
         $set: {
-          content: stringValue(req.body.content, 1000000),
-          language: sanitizeLanguage(req.body.language),
+          content: texts[0]?.content || '',
+          language: texts[0]?.language || 'plaintext',
           texts,
           rules,
           updatedAt: now
@@ -300,6 +325,11 @@ async function resolveContent(req, paste) {
         return { content: text.content, textId: text.id, context };
       }
     }
+  }
+
+  const defaultText = (paste.texts || []).find(item => item.id === 'default');
+  if (defaultText) {
+    return { content: defaultText.content, textId: defaultText.id, context };
   }
 
   return { content: paste.content, textId: null, context };

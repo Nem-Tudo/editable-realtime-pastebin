@@ -1,4 +1,4 @@
- 'use client';
+'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Editor from '@monaco-editor/react';
@@ -16,11 +16,43 @@ function makeId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function normalizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext') {
+  const source = Array.isArray(value) ? value : [];
+  const defaultText = source.find(text => text?.id === 'default');
+
+  return [
+    {
+      id: 'default',
+      name: 'Default',
+      content: typeof defaultText?.content === 'string' ? defaultText.content : legacyContent,
+      language: defaultText?.language || legacyLanguage || 'plaintext',
+      views: Number(defaultText?.views || 0)
+    },
+    ...source
+      .filter(text => text?.id !== 'default')
+      .map(text => ({
+        id: text.id || makeId(),
+        name: text.name || 'Sem nome',
+        content: text.content || '',
+        language: text.language || 'plaintext',
+        views: Number(text.views || 0)
+      }))
+  ];
+}
+
+function languageLabel(value) {
+  return languages.find(([id]) => id === value)?.[1] || value || 'Plain Text';
+}
+
+function preview(content) {
+  const text = String(content || '').replace(/\s+/g, ' ').trim();
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text || 'Sem conteúdo';
+}
+
 export default function PasteEditor({ params }) {
   const [id, setId] = useState(null);
-  const [content, setContent] = useState('');
-  const [language, setLanguage] = useState('plaintext');
   const [texts, setTexts] = useState([]);
+  const [selectedTextId, setSelectedTextId] = useState('default');
   const [rules, setRules] = useState([]);
   const [status, setStatus] = useState('Carregando...');
   const [saving, setSaving] = useState(false);
@@ -38,6 +70,11 @@ export default function PasteEditor({ params }) {
 
   const rawUrl = useMemo(() => id ? `${window.location.origin}/raw/${id}` : '', [id]);
   const viewUrl = useMemo(() => id ? `${window.location.origin}/view/${id}` : '', [id]);
+
+  const selectedText = useMemo(
+    () => texts.find(text => text.id === selectedTextId) || texts[0] || null,
+    [texts, selectedTextId]
+  );
 
   const headers = useCallback(() => ({
     'Content-Type': 'application/json',
@@ -62,9 +99,9 @@ export default function PasteEditor({ params }) {
       const response = await fetch(`${API}/api/pastes/${id}`, { cache: 'no-store' });
       if (!response.ok) throw new Error('not found');
       const paste = await response.json();
-      setContent(paste.content || '');
-      setLanguage(paste.language || 'plaintext');
-      setTexts(Array.isArray(paste.texts) ? paste.texts : []);
+      const loadedTexts = normalizeTexts(paste.texts, paste.content || '', paste.language || 'plaintext');
+      setTexts(loadedTexts);
+      setSelectedTextId(current => loadedTexts.some(text => text.id === current) ? current : 'default');
       setRules(Array.isArray(paste.rules) ? paste.rules : []);
       setUpdatedAt(paste.updatedAt);
       setStatus('Pronto');
@@ -95,19 +132,38 @@ export default function PasteEditor({ params }) {
   }, [load, authorized]);
 
   function addText() {
-    setTexts(value => [...value, { id: makeId(), name: `Texto ${value.length + 1}`, content: '' }]);
+    const text = {
+      id: makeId(),
+      name: `Texto ${texts.filter(item => item.id !== 'default').length + 1}`,
+      content: '',
+      language: 'plaintext',
+      views: 0
+    };
+    setTexts(value => [...value, text]);
+    setSelectedTextId(text.id);
   }
 
   function updateText(index, field, nextValue) {
     setTexts(current => current.map((item, i) =>
-      i === index ? { ...item, [field]: nextValue } : item
+      i === index
+        ? { ...item, ...(item.id === 'default' && field === 'name' ? {} : { [field]: nextValue }) }
+        : item
+    ));
+  }
+
+  function updateSelectedText(field, nextValue) {
+    if (!selectedText) return;
+    setTexts(current => current.map(text =>
+      text.id === selectedText.id ? { ...text, [field]: nextValue } : text
     ));
   }
 
   function removeText(index) {
     const removed = texts[index];
+    if (!removed || removed.id === 'default') return;
     setTexts(value => value.filter((_, i) => i !== index));
-    setRules(value => value.filter(rule => rule.textId !== removed?.id));
+    setRules(value => value.filter(rule => rule.textId !== removed.id));
+    if (selectedTextId === removed.id) setSelectedTextId('default');
   }
 
   function addRule() {
@@ -119,12 +175,14 @@ export default function PasteEditor({ params }) {
       region: '',
       city: '',
       device: '',
-      textId: texts[0]?.id || ''
+      textId: texts[0]?.id || 'default'
     }]);
   }
 
-  function updateRule(index, field, value) {
-    setRules(value => value.map((rule, i) => i === index ? { ...rule, [field]: value } : rule));
+  function updateRule(index, field, nextValue) {
+    setRules(currentRules => currentRules.map((rule, i) =>
+      i === index ? { ...rule, [field]: nextValue } : rule
+    ));
   }
 
   async function save() {
@@ -134,10 +192,23 @@ export default function PasteEditor({ params }) {
     setSaving(true);
     setStatus('Salvando...');
     try {
+      const defaultText = texts.find(text => text.id === 'default') || {
+        id: 'default', name: 'Default', content: '', language: 'plaintext', views: 0
+      };
+      const payloadTexts = [
+        { ...defaultText, id: 'default', name: 'Default' },
+        ...texts.filter(text => text.id !== 'default')
+      ];
+
       const response = await fetch(`${API}/api/pastes/${id}`, {
         method: 'PUT',
         headers: headers(),
-        body: JSON.stringify({ content, language, texts, rules })
+        body: JSON.stringify({
+          content: defaultText.content,
+          language: defaultText.language,
+          texts: payloadTexts,
+          rules
+        })
       });
 
       if (response.status === 401) {
@@ -147,9 +218,11 @@ export default function PasteEditor({ params }) {
       }
       if (!response.ok) throw new Error('save');
       const paste = await response.json();
-      setUpdatedAt(paste.updatedAt);
-      setTexts(paste.texts || []);
+      const savedTexts = normalizeTexts(paste.texts, paste.content || '', paste.language || 'plaintext');
+      setTexts(savedTexts);
+      setSelectedTextId(current => savedTexts.some(text => text.id === current) ? current : 'default');
       setRules(paste.rules || []);
+      setUpdatedAt(paste.updatedAt);
       setStatus('Salvo');
     } catch (err) {
       setStatus(err.message === 'auth' ? 'Credenciais inválidas' : 'Erro ao salvar');
@@ -164,7 +237,12 @@ export default function PasteEditor({ params }) {
       const response = await fetch(`${API}/api/pastes`, {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ content: '', language: 'plaintext', texts: [], rules: [] })
+        body: JSON.stringify({
+          content: '',
+          language: 'plaintext',
+          texts: [{ id: 'default', name: 'Default', content: '', language: 'plaintext', views: 0 }],
+          rules: []
+        })
       });
       if (!response.ok) throw new Error('create');
       const paste = await response.json();
@@ -191,7 +269,12 @@ export default function PasteEditor({ params }) {
     <main className="editor-page">
       <header className="toolbar">
         <div className="brand">Code Paste</div>
-        <select value={language} onChange={e => setLanguage(e.target.value)}>
+        <select
+          value={selectedText?.language || 'plaintext'}
+          onChange={e => updateSelectedText('language', e.target.value)}
+          disabled={!selectedText}
+          title="Linguagem do texto selecionado"
+        >
           {languages.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <div className="spacer" />
@@ -207,29 +290,77 @@ export default function PasteEditor({ params }) {
         {updatedAt && <span className="updated">atualizado {new Date(updatedAt).toLocaleString('pt-BR')}</span>}
       </div>
 
-      <section className="management">
+      <section className="text-library">
         <div className="section-head">
-          <strong>Textos salvos</strong>
+          <div>
+            <strong>Textos</strong>
+            <small className="muted section-description">Selecione um texto para abrir seu conteúdo no editor.</small>
+          </div>
           <button onClick={addText}>+ Novo texto</button>
         </div>
-        {texts.length === 0 && <small className="muted">Crie textos nomeados aqui. As regras apenas apontam para um desses textos.</small>}
-        {texts.map((text, index) => (
-          <div className="panel" key={text.id}>
-            <div className="row">
-              <input value={text.name} onChange={e => updateText(index, 'name', e.target.value)} placeholder="Nome do texto" />
-              <span className="views">{Number(text.views || 0).toLocaleString('pt-BR')} visualizações</span>
-              <button onClick={() => removeText(index)}>Remover</button>
-            </div>
-            <textarea value={text.content} onChange={e => updateText(index, 'content', e.target.value)}
-              placeholder="Conteúdo retornado por este texto" rows={5} />
-          </div>
-        ))}
 
-        <div className="section-head" style={{ marginTop: 18 }}>
+        <div className="text-cards">
+          {texts.map(text => (
+            <button
+              type="button"
+              className={`text-card ${selectedTextId === text.id ? 'active' : ''}`}
+              key={text.id}
+              onClick={() => setSelectedTextId(text.id)}
+            >
+              <div className="text-card-top">
+                <strong>{text.name}</strong>
+                {text.id === 'default' && <span className="default-badge">DEFAULT</span>}
+              </div>
+              <div className="text-card-meta">
+                <span>ID: <code>{text.id}</code></span>
+                <span>{languageLabel(text.language)}</span>
+                <span>{Number(text.views || 0).toLocaleString('pt-BR')} visualizações</span>
+              </div>
+              <div className="text-card-preview">{preview(text.content)}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="editor-section">
+        <div className="editor-head">
+          <div>
+            <strong>{selectedText?.name || 'Texto'}</strong>
+            <span className="editor-id">ID: {selectedText?.id || '—'}</span>
+          </div>
+          {selectedText?.id !== 'default' && selectedText && (
+            <div className="editor-actions">
+              <input
+                value={selectedText.name}
+                onChange={e => updateSelectedText('name', e.target.value)}
+                placeholder="Nome do texto"
+                aria-label="Nome do texto"
+              />
+              <button onClick={() => removeText(texts.findIndex(text => text.id === selectedText.id))}>Remover texto</button>
+            </div>
+          )}
+        </div>
+        <div className="editor">
+          {selectedText ? (
+            <Editor
+              theme="vs-dark"
+              language={selectedText.language || 'plaintext'}
+              value={selectedText.content || ''}
+              onChange={value => updateSelectedText('content', value ?? '')}
+              options={{ minimap: { enabled: true }, fontSize: 14, automaticLayout: true, tabSize: 2, wordWrap: 'off', padding: { top: 12 } }}
+            />
+          ) : (
+            <div className="empty-editor">Nenhum texto disponível.</div>
+          )}
+        </div>
+      </section>
+
+      <section className="management rules-section">
+        <div className="section-head">
           <strong>Filtros / regras</strong>
           <button onClick={addRule} disabled={!texts.length}>+ Nova regra</button>
         </div>
-        {!texts.length && <small className="muted">Crie pelo menos um texto antes de criar uma regra.</small>}
+        {rules.length === 0 && <small className="muted">Crie regras para entregar textos diferentes de acordo com o visitante.</small>}
         {rules.map((rule, index) => (
           <div className="panel" key={rule.id}>
             <div className="row">
@@ -240,11 +371,11 @@ export default function PasteEditor({ params }) {
               <button onClick={() => setRules(value => value.filter((_, i) => i !== index))}>Remover</button>
             </div>
             <div className="grid">
-              <input value={rule.userAgentRegex} onChange={e => updateRule(index, 'userAgentRegex', e.target.value)} placeholder="User-Agent regex (opcional)" />
-              <input value={rule.ipRegex} onChange={e => updateRule(index, 'ipRegex', e.target.value)} placeholder="IP regex (opcional)" />
-              <input value={rule.country} onChange={e => updateRule(index, 'country', e.target.value)} placeholder="País ex.: Brazil" />
-              <input value={rule.region} onChange={e => updateRule(index, 'region', e.target.value)} placeholder="Estado/região ex.: São Paulo" />
-              <input value={rule.city} onChange={e => updateRule(index, 'city', e.target.value)} placeholder="Cidade ex.: São José dos Campos" />
+              <input value={rule.userAgentRegex || ''} onChange={e => updateRule(index, 'userAgentRegex', e.target.value)} placeholder="User-Agent regex (opcional)" />
+              <input value={rule.ipRegex || ''} onChange={e => updateRule(index, 'ipRegex', e.target.value)} placeholder="IP regex (opcional)" />
+              <input value={rule.country || ''} onChange={e => updateRule(index, 'country', e.target.value)} placeholder="País ex.: Brazil" />
+              <input value={rule.region || ''} onChange={e => updateRule(index, 'region', e.target.value)} placeholder="Estado/região ex.: São Paulo" />
+              <input value={rule.city || ''} onChange={e => updateRule(index, 'city', e.target.value)} placeholder="Cidade ex.: São José dos Campos" />
               <select value={rule.device || ''} onChange={e => updateRule(index, 'device', e.target.value)}>
                 <option value="">Qualquer dispositivo</option>
                 <option value="pc">PC / computador</option>
@@ -257,11 +388,6 @@ export default function PasteEditor({ params }) {
             <small className="muted">Todos os campos preenchidos nessa regra precisam coincidir. Regex vazia não restringe.</small>
           </div>
         ))}
-      </section>
-
-      <section className="editor">
-        <Editor theme="vs-dark" language={language} value={content} onChange={value => setContent(value ?? '')}
-          options={{ minimap: { enabled: true }, fontSize: 14, automaticLayout: true, tabSize: 2, wordWrap: 'off', padding: { top: 12 } }} />
       </section>
     </main>
   );
