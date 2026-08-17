@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     volumes:
       - mongo_data:/data/db
-    ports:
-      - "27017:27017"
+    networks:
+      - codepaste
 
   api:
     build: ./api
@@ -13,21 +13,26 @@ services:
     environment:
       PORT: 4000
       MONGO_URI: mongodb://mongo:27017/codepaste
-      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "55018:4000"
     depends_on:
       - mongo
-    ports:
-      - "4000:4000"
-
+    networks:
+      - codepaste
   web:
     build: ./web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    ports:
+      - "55017:3000"
     depends_on:
       - api
-    ports:
-      - "3000:3000"
+    networks:
+      - codepaste
 
 volumes:
   mongo_data:
+
+networks:
+  codepaste:
