@@ -78,24 +78,31 @@ app.get('/api/pastes/:id', async (req, res) => {
 app.put('/api/pastes/:id', async (req, res) => {
   try {
     if (typeof req.body.content !== 'string') {
-      return res.status(400).json({ error: 'content must be a string' });
+      return res.status(400).json({
+        error: 'content must be a string'
+      });
     }
 
-    const paste = await Paste.findByIdAndUpdate(
-      req.params.id,
+    const now = new Date();
+
+    const paste = await Paste.findOneAndUpdate(
+      { _id: req.params.id },
       {
         $set: {
           content: req.body.content,
           language: sanitizeLanguage(req.body.language),
-          updatedAt: new Date()
+          updatedAt: now
+        },
+        $setOnInsert: {
+          createdAt: now
         }
       },
-      { new: true, runValidators: true }
+      {
+        new: true,
+        upsert: true,
+        runValidators: true
+      }
     ).lean();
-
-    if (!paste) {
-      return res.status(404).json({ error: 'Paste not found' });
-    }
 
     res.json({
       id: paste._id,
@@ -106,7 +113,9 @@ app.put('/api/pastes/:id', async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to update paste' });
+    res.status(500).json({
+      error: 'Failed to save paste'
+    });
   }
 });
 
