@@ -72,3 +72,7 @@ button.primary { background: #2563eb; border-color: #2563eb; }
   .editor-actions { width: 100%; }
   .editor-actions input { min-width: 0; flex: 1; }
 }
+
+.text-card.unreachable { border-color: #eab308; }
+.text-card.unreachable:hover { border-color: #facc15; }
+.text-card-warning { margin-top: 9px; padding: 7px 8px; border-radius: 6px; background: rgba(234, 179, 8, .10); color: #facc15; font-size: 11px; line-height: 1.4; }

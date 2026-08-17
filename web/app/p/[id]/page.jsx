@@ -26,7 +26,8 @@ function normalizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext')
       name: 'Default',
       content: typeof defaultText?.content === 'string' ? defaultText.content : legacyContent,
       language: defaultText?.language || legacyLanguage || 'plaintext',
-      views: Number(defaultText?.views || 0)
+      pageViews: Number(defaultText?.pageViews ?? defaultText?.views ?? 0),
+      rawViews: Number(defaultText?.rawViews || 0)
     },
     ...source
       .filter(text => text?.id !== 'default')
@@ -35,7 +36,8 @@ function normalizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext')
         name: text.name || 'Sem nome',
         content: text.content || '',
         language: text.language || 'plaintext',
-        views: Number(text.views || 0)
+        pageViews: Number(text.pageViews ?? text.views ?? 0),
+        rawViews: Number(text.rawViews || 0)
       }))
   ];
 }
@@ -60,6 +62,7 @@ export default function PasteEditor({ params }) {
   const [authReady, setAuthReady] = useState(false);
   const [authorized, setAuthorized] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [pasteExists, setPasteExists] = useState(false);
 
   useEffect(() => {
     Promise.resolve(params).then(p => setId(p.id));
@@ -68,9 +71,7 @@ export default function PasteEditor({ params }) {
     setAuthReady(true);
   }, [params]);
 
-  const rawUrl = useMemo(() => id ? `${window.location.origin}/raw/${id}` : '', [id]);
   const viewUrl = useMemo(() => id ? `${window.location.origin}/view/${id}` : '', [id]);
-
   const selectedText = useMemo(
     () => texts.find(text => text.id === selectedTextId) || texts[0] || null,
     [texts, selectedTextId]
@@ -97,9 +98,20 @@ export default function PasteEditor({ params }) {
     setStatus('Carregando...');
     try {
       const response = await fetch(`${API}/api/pastes/${id}`, { cache: 'no-store' });
+      if (response.status === 404) {
+        const blank = normalizeTexts([]);
+        setTexts(blank);
+        setSelectedTextId('default');
+        setRules([]);
+        setUpdatedAt(null);
+        setPasteExists(false);
+        setStatus('Novo paste');
+        return;
+      }
       if (!response.ok) throw new Error('not found');
       const paste = await response.json();
-      const loadedTexts = normalizeTexts(paste.texts, paste.content || '', paste.language || 'plaintext');
+      const loadedTexts = normalizeTexts(paste.texts);
+      setPasteExists(true);
       setTexts(loadedTexts);
       setSelectedTextId(current => loadedTexts.some(text => text.id === current) ? current : 'default');
       setRules(Array.isArray(paste.rules) ? paste.rules : []);
@@ -158,6 +170,28 @@ export default function PasteEditor({ params }) {
     ));
   }
 
+  function cloneText(text) {
+    if (!text) return;
+    const baseName = `${text.name || 'Texto'} (cópia)`;
+    const existingNames = new Set(texts.map(item => item.name));
+    let name = baseName;
+    let suffix = 2;
+    while (existingNames.has(name)) {
+      name = `${baseName} ${suffix++}`;
+    }
+
+    const clone = {
+      id: makeId(),
+      name,
+      content: text.content || '',
+      language: text.language || 'plaintext',
+      pageViews: 0,
+      rawViews: 0
+    };
+    setTexts(value => [...value, clone]);
+    setSelectedTextId(clone.id);
+  }
+
   function removeText(index) {
     const removed = texts[index];
     if (!removed || removed.id === 'default') return;
@@ -193,7 +227,7 @@ export default function PasteEditor({ params }) {
     setStatus('Salvando...');
     try {
       const defaultText = texts.find(text => text.id === 'default') || {
-        id: 'default', name: 'Default', content: '', language: 'plaintext', views: 0
+        id: 'default', name: 'Default', content: '', language: 'plaintext', pageViews: 0, rawViews: 0
       };
       const payloadTexts = [
         { ...defaultText, id: 'default', name: 'Default' },
@@ -204,8 +238,6 @@ export default function PasteEditor({ params }) {
         method: 'PUT',
         headers: headers(),
         body: JSON.stringify({
-          content: defaultText.content,
-          language: defaultText.language,
           texts: payloadTexts,
           rules
         })
@@ -218,7 +250,8 @@ export default function PasteEditor({ params }) {
       }
       if (!response.ok) throw new Error('save');
       const paste = await response.json();
-      const savedTexts = normalizeTexts(paste.texts, paste.content || '', paste.language || 'plaintext');
+      const savedTexts = normalizeTexts(paste.texts);
+      setPasteExists(true);
       setTexts(savedTexts);
       setSelectedTextId(current => savedTexts.some(text => text.id === current) ? current : 'default');
       setRules(paste.rules || []);
@@ -231,28 +264,10 @@ export default function PasteEditor({ params }) {
     }
   }
 
-  async function createPaste() {
-    if (!auth && !askAuth()) return;
-    try {
-      const response = await fetch(`${API}/api/pastes`, {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-          content: '',
-          language: 'plaintext',
-          texts: [{ id: 'default', name: 'Default', content: '', language: 'plaintext', views: 0 }],
-          rules: []
-        })
-      });
-      if (!response.ok) throw new Error('create');
-      const paste = await response.json();
-      window.location.href = `/p/${paste.id}`;
-    } catch {
-      setStatus('Erro ao criar paste');
-    }
-  }
 
   if (!id || !authReady) return <main className="center"><div className="card">Verificando autorização...</div></main>;
+
+  const referencedTextIds = useMemo(() => new Set(rules.map(rule => rule.textId).filter(Boolean)), [rules]);
 
   if (!authorized) return (
     <main className="center">
@@ -279,16 +294,10 @@ export default function PasteEditor({ params }) {
         </select>
         <div className="spacer" />
         <span className="status">{status}</span>
-        <button onClick={createPaste}>Novo paste</button>
         <a href={viewUrl} target="_blank" rel="noreferrer">Visualizar</a>
-        <a href={rawUrl} target="_blank" rel="noreferrer">RAW</a>
-        <button className="primary" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar'}</button>
+        <button className="primary" onClick={save} disabled={saving}>{saving ? 'Salvando...' : (pasteExists ? 'Salvar' : 'Criar')}</button>
       </header>
 
-      <div className="urlbar">
-        <span>RAW:</span><code>{rawUrl}</code>
-        {updatedAt && <span className="updated">atualizado {new Date(updatedAt).toLocaleString('pt-BR')}</span>}
-      </div>
 
       <section className="text-library">
         <div className="section-head">
@@ -303,7 +312,7 @@ export default function PasteEditor({ params }) {
           {texts.map(text => (
             <button
               type="button"
-              className={`text-card ${selectedTextId === text.id ? 'active' : ''}`}
+              className={`text-card ${selectedTextId === text.id ? 'active' : ''} ${text.id !== 'default' && !referencedTextIds.has(text.id) ? 'unreachable' : ''}`}
               key={text.id}
               onClick={() => setSelectedTextId(text.id)}
             >
@@ -314,9 +323,13 @@ export default function PasteEditor({ params }) {
               <div className="text-card-meta">
                 <span>ID: <code>{text.id}</code></span>
                 <span>{languageLabel(text.language)}</span>
-                <span>{Number(text.views || 0).toLocaleString('pt-BR')} visualizações</span>
+                <span>Página: {Number(text.pageViews || 0).toLocaleString('pt-BR')}</span>
+                <span>RAW: {Number(text.rawViews || 0).toLocaleString('pt-BR')}</span>
               </div>
               <div className="text-card-preview">{preview(text.content)}</div>
+              {text.id !== 'default' && !referencedTextIds.has(text.id) && (
+                <div className="text-card-warning">⚠ Nenhum filtro aponta para este texto — ele nunca vai aparecer.</div>
+              )}
             </button>
           ))}
         </div>
@@ -336,6 +349,7 @@ export default function PasteEditor({ params }) {
                 placeholder="Nome do texto"
                 aria-label="Nome do texto"
               />
+              <button onClick={() => cloneText(selectedText)}>Clonar texto</button>
               <button onClick={() => removeText(texts.findIndex(text => text.id === selectedText.id))}>Remover texto</button>
             </div>
           )}

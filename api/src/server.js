@@ -41,7 +41,8 @@ const textSchema = new mongoose.Schema({
   name: { type: String, required: true, maxlength: 120 },
   content: { type: String, required: true, default: '' },
   language: { type: String, default: 'plaintext' },
-  views: { type: Number, default: 0 }
+  pageViews: { type: Number, default: 0 },
+  rawViews: { type: Number, default: 0 }
 }, { _id: false });
 
 const ruleSchema = new mongoose.Schema({
@@ -57,8 +58,6 @@ const ruleSchema = new mongoose.Schema({
 
 const pasteSchema = new mongoose.Schema({
   _id: { type: String },
-  content: { type: String, required: true, default: '' },
-  language: { type: String, default: 'plaintext' },
   texts: { type: [textSchema], default: [] },
   rules: { type: [ruleSchema], default: [] },
   createdAt: { type: Date, default: Date.now },
@@ -79,16 +78,19 @@ function sanitizeLanguage(value) {
   return stringValue(value, 40) || 'plaintext';
 }
 
-function sanitizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext') {
+function sanitizeTexts(value) {
   const source = Array.isArray(value) ? value.slice(0, 200) : [];
   const incomingDefault = source.find(text => text?.id === 'default');
+
+  const numberValue = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 
   const defaultText = {
     id: 'default',
     name: 'Default',
-    content: stringValue(incomingDefault?.content ?? legacyContent, 1000000),
-    language: sanitizeLanguage(incomingDefault?.language ?? legacyLanguage),
-    views: Number.isFinite(Number(incomingDefault?.views)) ? Math.max(0, Number(incomingDefault.views)) : 0
+    content: stringValue(incomingDefault?.content, 1000000),
+    language: sanitizeLanguage(incomingDefault?.language),
+    pageViews: numberValue(incomingDefault?.pageViews ?? incomingDefault?.views),
+    rawViews: numberValue(incomingDefault?.rawViews)
   };
 
   const namedTexts = source
@@ -98,7 +100,8 @@ function sanitizeTexts(value, legacyContent = '', legacyLanguage = 'plaintext') 
       name: stringValue(text?.name, 120) || 'Sem nome',
       content: stringValue(text?.content, 1000000),
       language: sanitizeLanguage(text?.language),
-      views: Number.isFinite(Number(text?.views)) ? Math.max(0, Number(text.views)) : 0
+      pageViews: numberValue(text?.pageViews ?? text?.views),
+      rawViews: numberValue(text?.rawViews)
     }));
 
   return [defaultText, ...namedTexts];
@@ -125,9 +128,14 @@ function sanitizeRules(value, texts) {
 function serializePaste(paste) {
   return {
     id: paste._id,
-    content: paste.texts?.find(text => text.id === 'default')?.content ?? paste.content ?? '',
-    language: paste.texts?.find(text => text.id === 'default')?.language ?? paste.language ?? 'plaintext',
-    texts: paste.texts || [],
+    texts: (paste.texts || []).map(text => ({
+      id: text.id,
+      name: text.name,
+      content: text.content,
+      language: text.language,
+      pageViews: Number(text.pageViews ?? text.views ?? 0),
+      rawViews: Number(text.rawViews ?? 0)
+    })),
     rules: paste.rules || [],
     createdAt: paste.createdAt,
     updatedAt: paste.updatedAt
@@ -228,13 +236,11 @@ app.get('/health', (req, res) => {
 
 app.post('/api/pastes', requireBasicAuth, async (req, res) => {
   try {
-    const texts = sanitizeTexts(req.body.texts, req.body.content, req.body.language);
+    const texts = sanitizeTexts(req.body.texts);
     const rules = sanitizeRules(req.body.rules, texts);
 
     const paste = await Paste.create({
       _id: newId(),
-      content: texts[0]?.content || '',
-      language: texts[0]?.language || 'plaintext',
       texts,
       rules
     });
@@ -259,13 +265,23 @@ app.get('/api/pastes/:id', async (req, res) => {
 app.put('/api/pastes/:id', requireBasicAuth, async (req, res) => {
   try {
     const existing = await Paste.findById(req.params.id).lean();
-    const texts = sanitizeTexts(req.body.texts, req.body.content, req.body.language);
+    const texts = sanitizeTexts(req.body.texts);
 
     // Nunca diminui contadores por causa de um editor que ficou aberto
     // enquanto novas visualizações eram registradas.
-    const existingViews = new Map((existing?.texts || []).map(text => [text.id, Number(text.views || 0)]));
+    const existingViews = new Map((existing?.texts || []).map(text => [
+      text.id,
+      {
+        pageViews: Number(text.pageViews ?? text.views ?? 0),
+        rawViews: Number(text.rawViews ?? 0)
+      }
+    ]));
     for (const text of texts) {
-      text.views = Math.max(Number(text.views || 0), existingViews.get(text.id) || 0);
+      const old = existingViews.get(text.id);
+      if (old) {
+        text.pageViews = Math.max(Number(text.pageViews || 0), old.pageViews);
+        text.rawViews = Math.max(Number(text.rawViews || 0), old.rawViews);
+      }
     }
 
     const rules = sanitizeRules(req.body.rules, texts);
@@ -275,11 +291,13 @@ app.put('/api/pastes/:id', requireBasicAuth, async (req, res) => {
       { _id: req.params.id },
       {
         $set: {
-          content: texts[0]?.content || '',
-          language: texts[0]?.language || 'plaintext',
           texts,
           rules,
           updatedAt: now
+        },
+        $unset: {
+          content: '',
+          language: ''
         },
         $setOnInsert: { createdAt: now }
       },
@@ -332,14 +350,14 @@ async function resolveContent(req, paste) {
     return { content: defaultText.content, textId: defaultText.id, context };
   }
 
-  return { content: paste.content, textId: null, context };
+  return { content: '', textId: null, context };
 }
 
-async function incrementTextView(pasteId, textId) {
-  if (!textId) return;
+async function incrementTextView(pasteId, textId, field) {
+  if (!textId || !['pageViews', 'rawViews'].includes(field)) return;
   await Paste.updateOne(
     { _id: pasteId, 'texts.id': textId },
-    { $inc: { 'texts.$.views': 1 } }
+    { $inc: { [`texts.$.${field}`]: 1 } }
   );
 }
 
@@ -350,7 +368,7 @@ app.get('/raw/:id', async (req, res) => {
 
     const result = await resolveContent(req, paste);
 
-    await incrementTextView(paste._id, result.textId);
+    await incrementTextView(paste._id, result.textId, 'rawViews');
 
     console.log(
       `[RAW] ${result.context.ip} ${result.context.country}/${result.context.region}/${result.context.city} ` +
@@ -374,11 +392,14 @@ app.get('/api/pastes/:id/render', async (req, res) => {
     if (!paste) return res.status(404).json({ error: 'Paste not found' });
 
     const result = await resolveContent(req, paste);
-    await incrementTextView(paste._id, result.textId);
+    if (req.query.count !== '0') {
+      await incrementTextView(paste._id, result.textId, 'pageViews');
+    }
+    const selectedText = (paste.texts || []).find(text => text.id === result.textId);
     res.json({
       id: paste._id,
-      language: paste.language,
       content: result.content,
+      language: selectedText?.language || 'plaintext',
       textId: result.textId,
       device: result.context.device
     });
