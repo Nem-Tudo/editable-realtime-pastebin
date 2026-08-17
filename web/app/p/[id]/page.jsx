@@ -95,9 +95,19 @@ export default function PasteEditor({ params }) {
 
   const load = useCallback(async () => {
     if (!id) return;
+    if (id === 'new') {
+      const blank = normalizeTexts([]);
+      setTexts(blank);
+      setSelectedTextId('default');
+      setRules([]);
+      setUpdatedAt(null);
+      setPasteExists(false);
+      setStatus('Novo paste aleatório');
+      return;
+    }
     setStatus('Carregando...');
     try {
-      const response = await fetch(`${API}/api/pastes/${id}`, { cache: 'no-store' });
+      const response = await fetch(`${API}/api/pastes/${encodeURIComponent(id)}`, { cache: 'no-store' });
       if (response.status === 404) {
         const blank = normalizeTexts([]);
         setTexts(blank);
@@ -219,8 +229,14 @@ export default function PasteEditor({ params }) {
     ));
   }
 
-  async function save() {
+  async function save(event) {
     if (!id) return;
+
+    const isRandomPaste = id === 'new' && !pasteExists;
+    const randomHandle = isRandomPaste
+      ? Array.from({ length: 5 }, () => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 62)]).join('')
+      : id;
+    const targetId = isRandomPaste ? randomHandle : id;
     if (!auth && !askAuth()) return;
 
     setSaving(true);
@@ -234,7 +250,7 @@ export default function PasteEditor({ params }) {
         ...texts.filter(text => text.id !== 'default')
       ];
 
-      const response = await fetch(`${API}/api/pastes/${id}`, {
+      const response = await fetch(`${API}/api/pastes/${encodeURIComponent(targetId)}`, {
         method: 'PUT',
         headers: headers(),
         body: JSON.stringify({
@@ -252,11 +268,21 @@ export default function PasteEditor({ params }) {
       const paste = await response.json();
       const savedTexts = normalizeTexts(paste.texts);
       setPasteExists(true);
+      setId(targetId);
       setTexts(savedTexts);
       setSelectedTextId(current => savedTexts.some(text => text.id === current) ? current : 'default');
       setRules(paste.rules || []);
       setUpdatedAt(paste.updatedAt);
       setStatus('Salvo');
+
+      if (isRandomPaste) {
+        const editorUrl = `/p/${encodeURIComponent(targetId)}`;
+        if (event?.shiftKey) {
+          window.open(editorUrl, '_blank', 'noopener,noreferrer');
+        } else {
+          window.location.href = editorUrl;
+        }
+      }
     } catch (err) {
       setStatus(err.message === 'auth' ? 'Credenciais inválidas' : 'Erro ao salvar');
     } finally {

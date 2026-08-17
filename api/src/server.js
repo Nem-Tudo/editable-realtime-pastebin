@@ -252,6 +252,23 @@ app.post('/api/pastes', requireBasicAuth, async (req, res) => {
   }
 });
 
+app.get('/api/pastes', requireBasicAuth, async (req, res) => {
+  try {
+    const pastes = await Paste.find({}, {
+      _id: 1,
+      texts: 1,
+      rules: 1,
+      createdAt: 1,
+      updatedAt: 1
+    }).sort({ updatedAt: -1 }).lean();
+
+    res.json(pastes.map(serializePaste));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to list pastes' });
+  }
+});
+
 app.get('/api/pastes/:id', async (req, res) => {
   try {
     const paste = await Paste.findById(req.params.id).lean();
