@@ -1,48 +1,49 @@
 # Code Paste
 
-Pastebin-like editor with Next.js, Monaco Editor, Express and MongoDB.
+Pastebin-like editor with Next.js, Monaco, Express and MongoDB.
 
-## Run with Docker
+## Rotas
+
+- `GET /p/:id` — editor
+- `POST /api/pastes` — criar paste
+- `GET /api/pastes/:id` — obter paste
+- `PUT /api/pastes/:id` — salvar paste
+- `GET /raw/:id` — RAW (servido pelo domínio da web)
+- `GET /health` — health da API
+
+O `/raw/:id` público passa pelo Next.js e encaminha o `User-Agent` para a API. Assim, o RAW fica no mesmo domínio da interface, enquanto a API continua separada.
+
+## User-Agent
+
+Cada paste pode ter regras de User-Agent no formato:
+
+```json
+{
+  "userAgentRegex": "Discordbot|Googlebot",
+  "content": "conteúdo específico"
+}
+```
+
+As regras são avaliadas em ordem e a primeira regex que casar com o `User-Agent` vence. Se nenhuma casar, o conteúdo principal do paste é retornado.
+
+As regex são interpretadas pelo JavaScript com flag `i` (case-insensitive). Regex inválida é ignorada.
+
+## Docker
 
 ```bash
 docker compose up --build
 ```
 
-Open http://localhost:3000
+A aplicação web fica na porta `55017` e a API na `55018`.
 
-## Development
+Defina `NEXT_PUBLIC_API_URL` com a URL pública da API, por exemplo:
 
-### API
-
-```bash
-cd api
-npm install
-npm run dev
+```env
+NEXT_PUBLIC_API_URL=https://apibin.nemtudo.me
 ```
 
-Requires MongoDB and:
-`MONGO_URI=mongodb://localhost:27017/codepaste`
+O `API_INTERNAL_URL` usado pelo container web já aponta para `http://api:4000`.
 
-### Web
+## Segurança
 
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Set:
-`NEXT_PUBLIC_API_URL=http://localhost:4000`
-
-## Routes
-
-- `GET /p/:id` — editor
-- `POST /api/pastes` — create paste
-- `GET /api/pastes/:id` — get paste
-- `PUT /api/pastes/:id` — update paste
-- `GET /raw/:id` — raw content
-- `GET /health` — API health
-
-## Security note
-
-This starter intentionally does not execute code on the server. The `/raw/:id` endpoint only serves stored text.
+O servidor não executa o conteúdo dos pastes. O RAW apenas retorna texto armazenado.

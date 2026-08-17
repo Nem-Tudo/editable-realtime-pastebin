@@ -19,11 +19,13 @@ services:
       - mongo
     networks:
       - codepaste
+
   web:
     build: ./web
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      API_INTERNAL_URL: http://api:4000
     ports:
       - "55017:3000"
     depends_on:
