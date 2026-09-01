@@ -190,8 +190,8 @@ function getClientIp(req) {
 async function geolocateIp(ip) {
   const cleanIp = String(ip || '').replace(/^::ffff:/, '');
   if (!cleanIp || cleanIp === '127.0.0.1' || cleanIp === '::1' ||
-      cleanIp.startsWith('10.') || cleanIp.startsWith('192.168.') ||
-      /^172\.(1[6-9]|2\d|3[0-1])\./.test(cleanIp)) {
+    cleanIp.startsWith('10.') || cleanIp.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(cleanIp)) {
     return { country: '', region: '', city: '' };
   }
 
@@ -422,6 +422,135 @@ app.get('/api/pastes/:id/render', async (req, res) => {
     });
   } catch {
     res.status(404).json({ error: 'Paste not found' });
+  }
+});
+
+const hourPeriodSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  start: { type: String, default: '', maxlength: 16 },
+  end: { type: String, default: '', maxlength: 16 },
+  force: { type: String, default: '', enum: ['', 'day', 'night'] }
+}, { _id: false });
+
+const hourDaySchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  date: { type: String, default: '', maxlength: 10 },
+  content: { type: String, default: '', maxlength: 2000 },
+  periods: { type: [hourPeriodSchema], default: [] }
+}, { _id: false });
+
+const workProjectSchema = new mongoose.Schema({
+  _id: { type: String },
+  title: { type: String, default: '', maxlength: 160 },
+  summary: { type: String, default: '', maxlength: 5000 },
+  rates: {
+    dayNow: { type: Number, default: 25 },
+    dayFuture: { type: Number, default: 30 },
+    nightNow: { type: Number, default: 30 },
+    nightFuture: { type: Number, default: 25 }
+  },
+  nightStart: { type: String, default: '18:00', maxlength: 16 },
+  nightEnd: { type: String, default: '06:00', maxlength: 16 },
+  days: { type: [hourDaySchema], default: [] },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+}, { versionKey: false });
+
+const WorkProject = mongoose.model('WorkProject', workProjectSchema);
+
+function numberRate(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+}
+
+function sanitizeWorkProject(body) {
+  const sourceDays = Array.isArray(body?.days) ? body.days.slice(0, 400) : [];
+
+  return {
+    title: stringValue(body?.title, 160),
+    summary: stringValue(body?.summary, 5000),
+    rates: {
+      dayNow: numberRate(body?.rates?.dayNow, 25),
+      dayFuture: numberRate(body?.rates?.dayFuture, 30),
+      nightNow: numberRate(body?.rates?.nightNow, 30),
+      nightFuture: numberRate(body?.rates?.nightFuture, 25)
+    },
+    nightStart: stringValue(body?.nightStart, 16) || '18:00',
+    nightEnd: stringValue(body?.nightEnd, 16) || '06:00',
+    days: sourceDays.map(day => ({
+      id: stringValue(day?.id, 100) || newId(),
+      date: stringValue(day?.date, 10),
+      content: stringValue(day?.content, 2000),
+      periods: (Array.isArray(day?.periods) ? day.periods.slice(0, 30) : []).map(period => ({
+        id: stringValue(period?.id, 100) || newId(),
+        start: stringValue(period?.start, 16),
+        end: stringValue(period?.end, 16),
+        force: ['day', 'night'].includes(period?.force) ? period.force : ''
+      }))
+    }))
+  };
+}
+
+function serializeWorkProject(project) {
+  return {
+    id: project._id,
+    title: project.title || '',
+    summary: project.summary || '',
+    rates: project.rates || {},
+    nightStart: project.nightStart || '18:00',
+    nightEnd: project.nightEnd || '06:00',
+    days: project.days || [],
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt
+  };
+}
+
+app.get('/api/hours', requireBasicAuth, async (req, res) => {
+  try {
+    const projects = await WorkProject.find({}).sort({ updatedAt: -1 }).lean();
+    res.json(projects.map(serializeWorkProject));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to list hour projects' });
+  }
+});
+
+app.get('/api/hours/:id', requireBasicAuth, async (req, res) => {
+  try {
+    const project = await WorkProject.findById(req.params.id).lean();
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json(serializeWorkProject(project));
+  } catch {
+    res.status(404).json({ error: 'Project not found' });
+  }
+});
+
+app.put('/api/hours/:id', requireBasicAuth, async (req, res) => {
+  try {
+    const payload = sanitizeWorkProject(req.body);
+    const now = new Date();
+    const project = await WorkProject.findOneAndUpdate(
+      { _id: req.params.id },
+      {
+        $set: { ...payload, updatedAt: now },
+        $setOnInsert: { createdAt: now }
+      },
+      { new: true, upsert: true, runValidators: true }
+    ).lean();
+    res.json(serializeWorkProject(project));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save hour project' });
+  }
+});
+
+app.delete('/api/hours/:id', requireBasicAuth, async (req, res) => {
+  try {
+    const result = await WorkProject.deleteOne({ _id: req.params.id });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Project not found' });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to delete hour project' });
   }
 });
 

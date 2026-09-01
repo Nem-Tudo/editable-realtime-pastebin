@@ -116,7 +116,10 @@ export default function Home() {
             {authorized && <p className="muted">Pastes criados</p>}
           </div>
           {authReady && authorized && (
-            <button className="primary" onClick={createPaste}>Criar paste</button>
+            <div className="row" style={{ marginBottom: 0 }}>
+              <a href="/h">Horas</a>
+              <button className="primary" onClick={createPaste}>Criar paste</button>
+            </div>
           )}
         </header>
 
